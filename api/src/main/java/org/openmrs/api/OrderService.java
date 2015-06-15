@@ -85,15 +85,31 @@ public interface OrderService extends OpenmrsService {
 	 * @should pass if an active order for the same concept exists in a different care setting
 	 * @should set Order type of Drug Order to drug order if not set and concept not mapped
 	 * @should set Order type of Test Order to test order if not set and concept not mapped
-	 * @should fail if an active drug order for the same drug formulation exists
+	 * @should throw AmbiguousOrderException if an active drug order for the same drug formulation exists
 	 * @should pass if an active order for the same concept exists in a different care setting
 	 * @should fail for revision order if an active drug order for the same concept and care settings exists
 	 * @should pass for revision order if an active test order for the same concept and care settings exists
 	 * @should roll the autoExpireDate to the end of the day if it has no time component
 	 * @should not change the autoExpireDate if it has a time component
+	 * @should throw AmbiguousOrderException if disconnecting multiple active orders for the given concept
+	 * @should throw AmbiguousOrderException if disconnecting multiple active drug orders with the same drug
 	 */
 	@Authorized( { PrivilegeConstants.EDIT_ORDERS, PrivilegeConstants.ADD_ORDERS })
 	public Order saveOrder(Order order, OrderContext orderContext) throws APIException;
+	
+	/**
+	 * Save or update the given <code>order</code> in the database. If the OrderType for the order
+	 * is not specified, then it will be set to the one set on the OrderContext if any, if none
+	 * exists on the orderContext, then it will be set to the one associated to the ConceptClass of
+	 * the ordered concept otherwise the save fails. If the CareSetting field of the order is not
+	 * specified then it will default to the one set on the passed in OrderContext if any otherwise
+	 * the save fails. This method is different from saveOrder(Order order, OrderContext orderContext) above: 
+	 * param parallelOrders contains known overlapping orders to be bypassed in overlapping check, otherwise 
+	 * AmbiguousOrderException will be thrown
+	 * @should pass if an known drug order for the same drug formulation specified
+	 */
+	@Authorized( { PrivilegeConstants.EDIT_ORDERS, PrivilegeConstants.ADD_ORDERS })
+	public Order saveOrder(Order order, OrderContext orderContext, Order[]  parallelOrders) throws APIException;
 	
 	/**
 	 * Completely delete an order from the database. This should not typically be used unless

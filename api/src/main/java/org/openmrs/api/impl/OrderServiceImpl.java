@@ -14,6 +14,7 @@ import static org.openmrs.Order.Action.REVISE;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
@@ -40,6 +41,7 @@ import org.openmrs.Provider;
 import org.openmrs.TestOrder;
 import org.openmrs.User;
 import org.openmrs.api.APIException;
+import org.openmrs.api.AmbiguousOrderException;
 import org.openmrs.api.GlobalPropertyListener;
 import org.openmrs.api.OrderContext;
 import org.openmrs.api.OrderNumberGenerator;
@@ -71,6 +73,8 @@ public class OrderServiceImpl extends BaseOpenmrsService implements OrderService
 	protected OrderDAO dao;
 	
 	private static OrderNumberGenerator orderNumberGenerator = null;
+	
+	public static final String PARALLEL_ORDERS = "PARALLEL_ORDERS";
 	
 	public OrderServiceImpl() {
 	}
@@ -201,19 +205,34 @@ public class OrderServiceImpl extends BaseOpenmrsService implements OrderService
 		
 		if (DISCONTINUE != order.getAction()) {
 			List<Order> activeOrders = getActiveOrders(order.getPatient(), null, order.getCareSetting(), null);
+			List<Order> parallelOrders = Collections.emptyList();
+			if(orderContext!=null && orderContext.getAttribute(PARALLEL_ORDERS)!=null){
+				parallelOrders= Arrays.asList((Order[])orderContext.getAttribute(PARALLEL_ORDERS));
+			}
 			for (Order activeOrder : activeOrders) {
 				//Reject if there is an active drug order for the same orderable with overlapping schedule
-				if (areDrugOrdersOfSameOrderableAndOverlappingSchedule(order, activeOrder)) {
-					throw new APIException("Order.cannot.have.more.than.one", (Object[]) null);
+				if (!parallelOrders.contains(activeOrder) && areDrugOrdersOfSameOrderableAndOverlappingSchedule(order, activeOrder)) {
+					throw new AmbiguousOrderException("Order.cannot.have.more.than.one", (Object[]) null);
 				}
 			}
 		}
 		
 		return saveOrderInternal(order, orderContext);
 	}
-
+	
+	/**
+	 * @see org.openmrs.api.OrderService#saveOrder(org.openmrs.Order, org.openmrs.api.OrderContext, Order[]  parallelOrders)
+	 */
+	public synchronized Order saveOrder(Order order, OrderContext orderContext, Order[]  parallelOrders) throws APIException {
+		if(orderContext==null){
+			orderContext = new OrderContext();
+		}
+		orderContext.setAttribute(PARALLEL_ORDERS, parallelOrders);
+		return saveOrder(order, orderContext);
+	}
+	
 	private boolean areDrugOrdersOfSameOrderableAndOverlappingSchedule(Order firstOrder, Order secondOrder) {
-		return firstOrder.hasSameOrderableAs(secondOrder)
+		return  firstOrder.hasSameOrderableAs(secondOrder)
 				&& !OpenmrsUtil.nullSafeEquals(firstOrder.getPreviousOrder(), secondOrder)
 				&& OrderUtil.checkScheduleOverlap(firstOrder, secondOrder)
 				&& firstOrder.getOrderType().equals(Context.getOrderService().getOrderTypeByUuid(OrderType.DRUG_ORDER_TYPE_UUID));
